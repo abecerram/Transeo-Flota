@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transeo · Sistema de flota</title>
+<link rel="icon" href="escudo.svg">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+<div class="ingreso">
+  <img class="escudo" src="escudo.svg" alt="Transeo">
+
+  <!-- ============ ENTRAR ============ -->
+  <div class="caja" id="caja-entrar">
+    <h1>Sistema de flota</h1>
+    <div class="sub">Ingrese con su correo y su clave</div>
+    <div id="msj-entrar"></div>
+
+    <div class="campo"><label for="correo">Correo</label>
+      <input id="correo" type="email" autocomplete="username" placeholder="nombre@correo.com"></div>
+
+    <div class="campo"><label for="clave">Clave</label>
+      <div class="clave">
+        <input id="clave" type="password" autocomplete="current-password">
+        <button type="button" class="ver" onclick="verClave('clave', this)">Ver</button>
+      </div></div>
+
+    <label class="recordar"><input type="checkbox" id="recordar"> Recordar mi correo en este equipo</label>
+
+    <button class="btn ancho" id="btn-entrar" onclick="entrar()">Entrar</button>
+    <div style="text-align:center; margin-top:14px">
+      <button class="enlace" onclick="mostrar('olvido')">Olvidé mi clave</button>
+    </div>
+  </div>
+
+  <!-- ============ OLVIDÉ MI CLAVE ============ -->
+  <div class="caja oculto" id="caja-olvido">
+    <h1>Recuperar la clave</h1>
+    <div class="sub">Le enviamos un enlace a su correo para poner una clave nueva. El enlace sirve una sola vez y caduca en una hora.</div>
+    <div id="msj-olvido"></div>
+    <div class="campo"><label for="correo-olvido">Correo</label>
+      <input id="correo-olvido" type="email" autocomplete="username"></div>
+    <button class="btn ancho" id="btn-olvido" onclick="enviarEnlace()">Enviar el enlace</button>
+    <div style="text-align:center; margin-top:14px">
+      <button class="enlace" onclick="mostrar('entrar')">Volver a entrar</button>
+    </div>
+  </div>
+
+  <div class="pie">TRANSEO PTY · TRANSPORTES, SERVICIOS DE ASEO PTY, S.A.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/comun.js"></script>
+<script>
+
+function mostrar(cual) {
+  $('caja-entrar').classList.toggle('oculto', cual !== 'entrar');
+  $('caja-olvido').classList.toggle('oculto', cual !== 'olvido');
+  if (cual === 'olvido') $('correo-olvido').value = $('correo').value;
+  pintarMensaje('msj-entrar', ''); pintarMensaje('msj-olvido', '');
+}
+
+function verClave(id, btn) {
+  const i = $(id);
+  i.type = i.type === 'password' ? 'text' : 'password';
+  btn.textContent = i.type === 'password' ? 'Ver' : 'Ocultar';
+}
+
+async function entrar() {
+  const correo = $('correo').value.trim().toLowerCase();
+  const clave = $('clave').value;
+  if (!correo || !clave) { pintarMensaje('msj-entrar', 'Escriba su correo y su clave.', 'error'); return; }
+
+  const btn = $('btn-entrar');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+  const r = await sb.auth.signInWithPassword({ email: correo, password: clave });
+  btn.disabled = false; btn.textContent = 'Entrar';
+
+  if (r.error) { pintarMensaje('msj-entrar', textoError(r.error), 'error'); return; }
+  recordarCorreo($('recordar').checked ? correo : '');
+  marcarActividad();
+  location.href = 'app.html';
+}
+
+async function enviarEnlace() {
+  const correo = $('correo-olvido').value.trim().toLowerCase();
+  if (!correo) { pintarMensaje('msj-olvido', 'Escriba su correo.', 'error'); return; }
+  const btn = $('btn-olvido');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  const destino = location.href.replace(/[^/]*$/, '') + CONFIG.paginaClave;
+  const r = await sb.auth.resetPasswordForEmail(correo, { redirectTo: destino });
+  btn.disabled = false; btn.textContent = 'Enviar el enlace';
+  if (r.error) { pintarMensaje('msj-olvido', textoError(r.error), 'error'); return; }
+  // mismo mensaje exista o no el correo: no se revela quién tiene cuenta
+  pintarMensaje('msj-olvido', 'Si ese correo tiene cuenta, le llegará el enlace en unos minutos. Revise también la carpeta de spam.', 'ok');
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter') return;
+  if (!$('caja-entrar').classList.contains('oculto')) entrar();
+  else enviarEnlace();
+});
+
+(async function () {
+  const guardado = correoRecordado();
+  if (guardado) { $('correo').value = guardado; $('recordar').checked = true; $('clave').focus(); }
+  else $('correo').focus();
+
+  if (/sinacceso=1/.test(location.search)) {
+    pintarMensaje('msj-entrar', 'Su cuenta todavía no tiene acceso. Pídale al administrador que le asigne su perfil.', 'aviso');
+    return;
+  }
+  const s = await sb.auth.getSession();
+  if (s.data.session && !sesionVencida()) location.href = 'app.html';
+})();
+</script>
+</body>
+</html>

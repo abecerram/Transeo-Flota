@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transeo · Crear clave</title>
+<link rel="icon" href="escudo.svg">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+<div class="ingreso">
+  <img class="escudo" src="escudo.svg" alt="Transeo">
+  <div class="caja">
+    <h1 id="titulo">Crear su clave</h1>
+    <div class="sub" id="sub">Revisando el enlace...</div>
+    <div id="msj"></div>
+
+    <div id="formulario" class="oculto">
+      <div class="campo"><label for="clave1">Clave nueva</label>
+        <div class="clave">
+          <input id="clave1" type="password" autocomplete="new-password">
+          <button type="button" class="ver" onclick="verClave('clave1', this)">Ver</button>
+        </div>
+        <div class="ayuda">Mínimo 8 caracteres. Solo usted la conoce.</div></div>
+      <div class="campo"><label for="clave2">Repita la clave</label>
+        <input id="clave2" type="password" autocomplete="new-password"></div>
+      <button class="btn ancho" id="btn" onclick="guardar()">Guardar clave y entrar</button>
+    </div>
+  </div>
+  <div class="pie">TRANSEO PTY · TRANSPORTES, SERVICIOS DE ASEO PTY, S.A.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/comun.js"></script>
+<script>
+
+function verClave(id, btn) {
+  const i = $(id);
+  i.type = i.type === 'password' ? 'text' : 'password';
+  btn.textContent = i.type === 'password' ? 'Ver' : 'Ocultar';
+}
+
+function listo(esNueva) {
+  $('titulo').textContent = esNueva ? 'Crear su clave' : 'Poner una clave nueva';
+  $('sub').textContent = esNueva ? 'Bienvenido al sistema de flota de Transeo. Escoja su clave para entrar.'
+                                 : 'Escriba su clave nueva. La anterior deja de servir.';
+  $('formulario').classList.remove('oculto');
+  $('clave1').focus();
+}
+
+async function guardar() {
+  const a = $('clave1').value, b = $('clave2').value;
+  if (a.length < 8) { pintarMensaje('msj', 'La clave debe tener al menos 8 caracteres.', 'error'); return; }
+  if (a !== b) { pintarMensaje('msj', 'Las dos claves no coinciden.', 'error'); return; }
+  const btn = $('btn');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  const r = await sb.auth.updateUser({ password: a });
+  btn.disabled = false; btn.textContent = 'Guardar clave y entrar';
+  if (r.error) { pintarMensaje('msj', textoError(r.error), 'error'); return; }
+  marcarActividad();
+  location.href = 'app.html';
+}
+
+document.addEventListener('keydown', function (e) { if (e.key === 'Enter') guardar(); });
+
+// el enlace del correo trae la sesion; Supabase la toma de la direccion
+const esInvitacion = /type=invite|type=signup/.test(location.hash + location.search);
+let resuelto = false;
+sb.auth.onAuthStateChange(function (evento, sesion) {
+  if (resuelto) return;
+  if (evento === 'PASSWORD_RECOVERY' || (sesion && (evento === 'SIGNED_IN' || evento === 'INITIAL_SESSION'))) {
+    resuelto = true;
+    listo(esInvitacion);
+  }
+});
+
+setTimeout(function () {
+  if (resuelto) return;
+  const error = new URLSearchParams(location.hash.replace(/^#/, '')).get('error_description');
+  $('sub').textContent = '';
+  pintarMensaje('msj', (error ? error + '. ' : '') +
+    'El enlace no es válido o ya caducó. Pida uno nuevo desde "Olvidé mi clave".', 'error');
+  $('msj').insertAdjacentHTML('beforeend', '<a class="btn ancho" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="index.html">Ir a la entrada</a>');
+}, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transeo · Sistema de flota</title>
+<link rel="icon" href="escudo.svg">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+<div id="arranque" class="cargando" style="justify-content:center; height:100%"><div class="giro"></div> Entrando...</div>
+
+<div class="app oculto" id="app">
+  <aside class="lateral" id="lateral">
+    <div class="marca">
+      <div style="display:flex; align-items:center; gap:12px"><img src="escudo.svg" alt=""><span>TRANSEO</span></div>
+      <button class="boton-menu" id="boton-menu">Menú</button>
+    </div>
+    <nav class="menu" id="menu"></nav>
+    <div class="salir">
+      <div class="quien" id="quien"></div>
+      <button id="btn-salir">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <main class="principal">
+    <div class="encabezado">
+      <div><h1 id="titulo"></h1><div class="sub" id="subtitulo"></div></div>
+    </div>
+    <div id="contenido"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/comun.js"></script>
+<script src="js/catalogos.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
