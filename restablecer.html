@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transeo · Crear clave</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+<div class="acceso animar">
+  <div id="logo"></div>
+  <div class="caja">
+    <h1 id="titulo">Crear su clave</h1>
+    <div class="sub" id="sub">Revisando el enlace...</div>
+    <div id="msj"></div>
+    <div id="formulario" class="oculto">
+      <div class="campo"><label for="clave1">Clave nueva</label>
+        <div class="clave"><input id="clave1" type="password" autocomplete="new-password">
+          <button type="button" class="ver" onclick="verClave('clave1', this)">Ver</button></div></div>
+      <div class="reglas" id="reglas"></div>
+      <div class="campo"><label for="clave2">Repita la clave</label>
+        <input id="clave2" type="password" autocomplete="new-password"></div>
+      <button class="btn ancho" id="btn" onclick="guardar()">Guardar clave y entrar</button>
+    </div>
+  </div>
+  <div class="pie-acceso">TRANSEO PTY · TRANSPORTES, SERVICIOS DE ASEO PTY, S.A.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/comun.js"></script>
+<script>
+let CORREO = '';
+
+function verClave(id, btn) {
+  const i = $(id);
+  i.type = i.type === 'password' ? 'text' : 'password';
+  btn.textContent = i.type === 'password' ? 'Ver' : 'Ocultar';
+}
+
+function reglas() {
+  const v = $('clave1').value;
+  const usuario = CORREO.split('@')[0].toLowerCase();
+  const r = [
+    ['Al menos 8 caracteres', v.length >= 8],
+    ['Una letra y un número', /[a-zA-Z]/.test(v) && /\d/.test(v)],
+    ['Distinta a su correo', !!v && (!usuario || v.toLowerCase().indexOf(usuario) === -1)]
+  ];
+  $('reglas').innerHTML = r.map(function (x) { return '<span class="' + (x[1] ? 'ok' : '') + '">' + x[0] + '</span>'; }).join('');
+  return r.every(function (x) { return x[1]; });
+}
+
+function listo(esNueva, sesion) {
+  CORREO = (sesion && sesion.user && sesion.user.email) || '';
+  const nombre = (sesion && sesion.user && sesion.user.user_metadata && sesion.user.user_metadata.nombre) || '';
+  $('titulo').textContent = esNueva ? 'Bienvenido' + (nombre ? ', ' + nombre.split(' ')[0] : '') : 'Poner una clave nueva';
+  $('sub').textContent = esNueva
+    ? 'Lo invitaron al sistema de flota de Transeo. Escoja su clave: solo usted la conoce, ni el administrador la ve.'
+    : 'Escriba su clave nueva. La anterior deja de servir.';
+  $('formulario').classList.remove('oculto');
+  reglas();
+  setTimeout(function () { $('clave1').focus(); }, 1100);
+}
+
+async function guardar() {
+  const a = $('clave1').value, b = $('clave2').value;
+  if (!reglas()) { pintarMensaje('msj', 'La clave todavía no cumple las tres reglas.', 'error'); return; }
+  if (a !== b) { pintarMensaje('msj', 'Las dos claves no coinciden.', 'error'); return; }
+  const btn = $('btn');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  const r = await sb.auth.updateUser({ password: a });
+  btn.disabled = false; btn.textContent = 'Guardar clave y entrar';
+  if (r.error) { pintarMensaje('msj', esc(textoError(r.error)), 'error'); return; }
+  if (CORREO) ponerIntentos(CORREO, 0);
+  marcarActividad();
+  location.href = 'app.html';
+}
+
+$('logo').outerHTML = logoAnimado();
+  setTimeout(function () { document.querySelector('.acceso').classList.remove('animar'); }, 1900);
+$('clave1').addEventListener('input', reglas);
+document.addEventListener('keydown', function (e) { if (e.key === 'Enter') guardar(); });
+
+// el enlace del correo trae la sesión; Supabase la toma de la dirección
+const esInvitacion = /type=invite|type=signup/.test(location.hash + location.search);
+let resuelto = false;
+sb.auth.onAuthStateChange(function (evento, sesion) {
+  if (resuelto) return;
+  if (evento === 'PASSWORD_RECOVERY' || (sesion && (evento === 'SIGNED_IN' || evento === 'INITIAL_SESSION'))) {
+    resuelto = true;
+    listo(esInvitacion, sesion);
+  }
+});
+
+setTimeout(function () {
+  if (resuelto) return;
+  const error = new URLSearchParams(location.hash.replace(/^#/, '')).get('error_description');
+  $('sub').textContent = '';
+  pintarMensaje('msj', (error ? esc(error) + '. ' : '') + 'El enlace no es válido o ya caducó. Pida uno nuevo desde "Olvidé mi clave".', 'error');
+  $('msj').insertAdjacentHTML('beforeend', '<a class="btn ancho" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="index.html">Ir a la entrada</a>');
+}, 4000);
+</script>
+</body>
+</html>

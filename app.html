@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transeo · Sistema de flota</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+<div id="arranque" class="acceso">
+  <div id="logo-arranque"></div>
+  <div class="barrita"><i></i></div>
+</div>
+
+<div class="oculto" id="panel">
+  <header class="top">
+    <div class="logo-c" id="logo-top"></div>
+    <div class="marca-t"><b>TRANSEO</b><small>Sistema de flota</small></div>
+    <div class="div"></div>
+    <div id="top-mod"></div>
+    <div class="der">
+      <div class="conectado"><i></i>Conectado</div>
+      <div class="usuario"><span id="quien"></span><div class="av" id="iniciales"></div></div>
+      <button class="salir" id="btn-salir">Salir</button>
+      <button class="boton-menu" id="boton-menu">Menú</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="lateral" id="lateral"><nav class="menu" id="menu"></nav></aside>
+    <main class="principal">
+      <div class="encabezado" id="encabezado">
+        <div><h1 id="titulo"></h1><div class="sub" id="subtitulo"></div></div>
+      </div>
+      <div id="contenido"></div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/comun.js"></script>
+<script src="js/catalogos.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
