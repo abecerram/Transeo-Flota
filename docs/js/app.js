@@ -286,36 +286,172 @@ async function pintarFichaEq() {
 }
 
 // ================================================================== USUARIOS
+// Como en el sistema anterior: se crea la persona, el sistema le da una clave
+// temporal, se le entrega, y ella la cambia al entrar por primera vez.
+const USU = { lista: [] };
+
+async function llamarAdmin(cuerpo) {
+  const r = await sb.functions.invoke('admin-usuarios', { body: cuerpo });
+  if (r.error) {
+    let m = r.error.message;
+    try { const j = await r.error.context.json(); if (j && j.mensaje) m = j.mensaje; } catch (e) {}
+    if (/Failed to send a request|not found|404/i.test(m)) m = 'La función del servidor todavía no está instalada en Supabase.';
+    return { ok: false, mensaje: m };
+  }
+  return r.data || { ok: false, mensaje: 'Sin respuesta del servidor.' };
+}
+
 async function mostrarUsuarios(cont) {
   cargando(cont, 'Cargando usuarios...');
-  const r = await sb.from('perfiles').select('*').order('creado_en');
+  const r = await sb.rpc('admin_usuarios');
   if (r.error) { cont.innerHTML = '<div class="mensaje error">' + esc(textoError(r.error)) + '</div>'; return; }
-  const est = 'height:38px;border:1.5px solid var(--bf);border-radius:10px;padding:0 10px;font:13.5px var(--f)';
-  const filas = r.data.map(function (u) {
-    const mio = u.id === PERFIL.id;
-    return '<tr data-id="' + u.id + '">' +
-      '<td><input class="u-nombre" value="' + esc(u.nombre || '') + '" style="' + est + ';width:100%"></td>' +
-      '<td class="mono" style="font-size:12.5px">' + esc(u.correo) + '</td>' +
-      '<td><select class="u-rol" style="' + est + '"' + (mio ? ' disabled' : '') + '>' +
-        ROLES.map(x => '<option' + (x === u.rol ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></td>' +
-      '<td><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="u-activo"' + (u.activo ? ' checked' : '') + (mio ? ' disabled' : '') +
-        ' style="width:18px;height:18px;accent-color:var(--azul)"> Puede entrar</label></td>' +
-      '<td style="text-align:right"><button class="btn chico u-guardar">Guardar</button></td></tr>';
-  }).join('');
+  USU.lista = r.data || [];
   cont.innerHTML =
-    '<div class="mensaje">Para agregar a alguien: en Supabase, <b>Authentication → Users → Invite user</b>, con su correo. Le llega la invitación, ' +
-    'crea su clave y aparece aquí como <b>Sin acceso</b>. Ahí le asigna su perfil y marca <b>Puede entrar</b>.</div>' +
-    '<div class="tarjeta"><div class="tabla-caja"><table class="datos"><tr><th>Nombre</th><th>Correo</th><th>Perfil</th><th>Acceso</th><th></th></tr>' +
-    filas + '</table></div></div>';
-  cont.querySelectorAll('.u-guardar').forEach(b => b.addEventListener('click', async function () {
-    const tr = b.closest('tr');
-    const cambios = { nombre: tr.querySelector('.u-nombre').value.trim() || null };
-    if (tr.dataset.id !== PERFIL.id) { cambios.rol = tr.querySelector('.u-rol').value; cambios.activo = tr.querySelector('.u-activo').checked; }
-    b.disabled = true;
-    const u = await sb.from('perfiles').update(cambios).eq('id', tr.dataset.id);
-    b.disabled = false;
-    aviso(u.error ? textoError(u.error) : 'Usuario actualizado.', u.error ? 'error' : 'ok');
-  }));
+    '<div id="usu-lista"><div class="barra-herramientas"><input id="usu-buscar" placeholder="Buscar por nombre o correo">' +
+      '<button class="btn" id="usu-nuevo">Crear usuario</button></div>' +
+    '<div class="tarjeta"><div class="tabla-caja" id="usu-tabla"></div>' +
+      '<div class="mensaje" style="margin:16px 0 0">Desactivar impide entrar y conserva la ficha. Borrar elimina la cuenta, pero la bitácora guarda igual todo lo que esa persona hizo.</div></div></div>' +
+    '<div class="tarjeta oculto" id="usu-form"></div>';
+  $('usu-buscar').addEventListener('input', pintarUsuarios);
+  $('usu-nuevo').addEventListener('click', function () { formUsuario(null); });
+  pintarUsuarios();
+}
+
+function estadoUsuario(u) {
+  if (u.bloqueado) return '<span class="etiqueta vencido">BLOQUEADO</span>';
+  if (!u.activo) return '<span class="etiqueta">' + (u.rol === 'Sin acceso' ? 'SIN ACCESO' : 'INACTIVO') + '</span>';
+  if (u.clave_temporal) return '<span class="etiqueta urgente">CLAVE TEMPORAL</span>';
+  return '<span class="etiqueta bien">ACTIVO</span>';
+}
+
+function pintarUsuarios() {
+  const q = ($('usu-buscar').value || '').toLowerCase().trim();
+  const filas = USU.lista.filter(u => !q || [u.nombre, u.correo].join(' ').toLowerCase().indexOf(q) > -1);
+  if (!filas.length) { $('usu-tabla').innerHTML = '<div class="vacio">No hay usuarios.</div>'; return; }
+  $('usu-tabla').innerHTML = '<table class="datos"><tr><th>Nombre</th><th>Perfil</th><th>Celular</th><th>Último acceso</th><th>Estado</th><th>Acciones</th></tr>' +
+    filas.map(function (u) {
+      const mio = u.id === PERFIL.id;
+      const acceso = u.ultimo_acceso ? fechaTexto(u.ultimo_acceso) + ' · ' + new Date(u.ultimo_acceso).toLocaleTimeString('es-PA', { hour: '2-digit', minute: '2-digit' }) : 'Nunca';
+      let acc = '<button class="btn claro chico" data-u="editar" data-id="' + u.id + '">Editar</button> ' +
+        '<button class="btn claro chico" data-u="restablecer" data-id="' + u.id + '">Nueva clave</button>';
+      if (u.bloqueado) acc += ' <button class="btn suave chico" data-u="desbloquear" data-id="' + u.id + '">Desbloquear</button>';
+      if (!mio) {
+        acc += u.activo ? ' <button class="btn claro chico" data-u="desactivar" data-id="' + u.id + '">Desactivar</button>'
+                        : ' <button class="btn suave chico" data-u="reactivar" data-id="' + u.id + '">' + (u.rol === 'Sin acceso' ? 'Dar acceso' : 'Reactivar') + '</button>';
+        acc += ' <button class="btn peligro chico" data-u="borrar" data-id="' + u.id + '">Borrar</button>';
+      }
+      return '<tr><td><b>' + esc(u.nombre || '—') + '</b>' + (mio ? ' <span class="gris">(usted)</span>' : '') +
+        '<div class="mono gris" style="font-size:11.5px">' + esc(u.correo) + '</div></td>' +
+        '<td>' + esc(u.rol) + '</td><td class="mono" style="font-size:12.5px">' + esc(u.celular || '—') + '</td>' +
+        '<td class="gris">' + esc(acceso) + '</td><td>' + estadoUsuario(u) + '</td>' +
+        '<td style="white-space:nowrap">' + acc + '</td></tr>';
+    }).join('') + '</table>';
+  $('usu-tabla').querySelectorAll('[data-u]').forEach(b => b.addEventListener('click', function () { accionUsuario(b.dataset.u, b.dataset.id, b); }));
+}
+
+function formUsuario(u) {
+  const f = $('usu-form');
+  const roles = ROLES.filter(r => r !== 'Sin acceso');
+  const v = (k) => esc(u && u[k] ? u[k] : '');
+  f.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">' + (u ? esc(u.nombre || u.correo) : 'Nuevo usuario') + '</h2>' +
+      '<button class="btn claro chico" id="usu-volver">Volver a la lista</button></div><div id="usu-msj"></div>' +
+    '<div class="fila"><div class="campo"><label>Nombre completo *</label><input id="uf-nombre" value="' + v('nombre') + '" placeholder="Cristeen Santos"></div>' +
+      '<div class="campo"><label>Correo *</label><input id="uf-correo" type="email" value="' + v('correo') + '" placeholder="nombre@correo.com"' + (u ? ' disabled' : '') + '>' +
+        '<div class="ayuda">' + (u ? 'El correo no se cambia: es con el que entra.' : 'Cualquier correo que la persona revise. Es con el que entra.') + '</div></div>' +
+      '<div class="campo"><label>Perfil *</label><select id="uf-rol">' + roles.map(r => '<option' + (u && u.rol === r ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div></div>' +
+    '<div class="fila"><div class="campo"><label>Cédula</label><input id="uf-cedula" value="' + v('cedula') + '" placeholder="8-888-8888"></div>' +
+      '<div class="campo"><label>Celular</label><input id="uf-celular" value="' + v('celular') + '" placeholder="6000-0000" inputmode="numeric"></div></div>' +
+    (u ? '' : '<div class="mensaje">Al crearlo, el sistema genera una <b>clave temporal</b>. Se la entrega a la persona, y ella la cambia al entrar por primera vez: usted nunca conoce su clave definitiva.</div>') +
+    '<div class="acciones"><button class="btn" id="usu-guardar">' + (u ? 'Guardar cambios' : 'Crear usuario') + '</button><button class="btn claro" id="usu-cancelar">Cancelar</button></div>';
+  $('usu-lista').classList.add('oculto'); f.classList.remove('oculto'); window.scrollTo(0, 0);
+  const cerrar = function () { f.classList.add('oculto'); $('usu-lista').classList.remove('oculto'); };
+  $('usu-volver').addEventListener('click', cerrar); $('usu-cancelar').addEventListener('click', cerrar);
+  $('usu-guardar').addEventListener('click', async function () {
+    const d = { nombre: $('uf-nombre').value.trim(), correo: $('uf-correo').value.trim().toLowerCase(), rol: $('uf-rol').value,
+                cedula: $('uf-cedula').value.trim() || null, celular: $('uf-celular').value.trim() || null };
+    if (!d.nombre) { pintarMensaje('usu-msj', 'Falta el nombre.', 'error'); return; }
+    const btn = $('usu-guardar'); btn.disabled = true; btn.textContent = 'Guardando...';
+    if (u) {
+      const r = await sb.from('perfiles').update({ nombre: d.nombre, rol: d.rol, cedula: d.cedula, celular: d.celular }).eq('id', u.id);
+      btn.disabled = false; btn.textContent = 'Guardar cambios';
+      if (r.error) { pintarMensaje('usu-msj', esc(textoError(r.error)), 'error'); return; }
+      aviso('Usuario actualizado.', 'ok');
+      mostrarUsuarios($('contenido'));
+      return;
+    }
+    if (!d.correo) { btn.disabled = false; btn.textContent = 'Crear usuario'; pintarMensaje('usu-msj', 'Falta el correo.', 'error'); return; }
+    const r = await llamarAdmin(Object.assign({ accion: 'crear' }, d));
+    btn.disabled = false; btn.textContent = 'Crear usuario';
+    if (!r.ok) { pintarMensaje('usu-msj', esc(r.mensaje), 'error'); return; }
+    await mostrarUsuarios($('contenido'));
+    mostrarClave(d.nombre, d.correo, d.celular, r.clave, true);
+  });
+}
+
+function mostrarClave(nombre, correo, celular, clave, nuevo) {
+  const dir = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '');
+  const texto = 'Hola ' + nombre.split(' ')[0] + '. ' + (nuevo ? 'Ya tiene usuario en el sistema de flota de Transeo.' : 'Le generé una clave nueva para el sistema de flota de Transeo.') +
+    '\nEntre en: ' + dir + '\nCorreo: ' + correo + '\nClave temporal: ' + clave + '\nAl entrar, el sistema le pide escoger su propia clave.';
+  const cel = String(celular || '').replace(/\D/g, '');
+  const f = document.createElement('div');
+  f.className = 'fondo-ventana';
+  f.innerHTML = '<div class="ventana"><h3>' + (nuevo ? 'Usuario creado' : 'Clave temporal nueva') + '</h3>' +
+    '<p>Entréguele esta clave a <b>' + esc(nombre) + '</b>. Solo se muestra esta vez; al entrar, el sistema le pide cambiarla.</p>' +
+    '<div style="margin:16px 0;background:var(--azc);border-radius:12px;padding:16px;text-align:center">' +
+      '<div class="gris">Correo</div><div class="mono" style="font-size:14px;margin-bottom:10px">' + esc(correo) + '</div>' +
+      '<div class="gris">Clave temporal</div><div class="mono" style="font-size:28px;font-weight:600;color:var(--azul);letter-spacing:.06em">' + esc(clave) + '</div></div>' +
+    '<div class="acciones" style="margin-top:0"><button class="btn" data-a="copiar">Copiar mensaje</button>' +
+      '<a class="btn suave" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="https://wa.me/' + (cel ? '507' + cel : '') + '?text=' + encodeURIComponent(texto) + '">Enviar por WhatsApp</a>' +
+      '<button class="btn claro" data-a="cerrar">Listo</button></div></div>';
+  f.addEventListener('click', async function (e) {
+    const a = e.target.getAttribute('data-a');
+    if (a === 'copiar') { try { await navigator.clipboard.writeText(texto); aviso('Mensaje copiado.', 'ok'); } catch (x) { aviso('No se pudo copiar; anótela.', 'error'); } }
+    if (a === 'cerrar') f.remove();
+  });
+  document.body.appendChild(f);
+}
+
+async function accionUsuario(accion, id, btn) {
+  const u = USU.lista.filter(x => x.id === id)[0];
+  if (!u) return;
+  const nombre = u.nombre || u.correo;
+  if (accion === 'editar') { formUsuario(u); return; }
+  if (accion === 'restablecer') {
+    if (!(await confirmar('Nueva clave temporal', 'Se genera una clave temporal para ' + nombre + '. La que tiene deja de servir, y al entrar tendrá que escoger una nueva.', 'Generar clave'))) return;
+    btn.disabled = true;
+    const r = await llamarAdmin({ accion: 'restablecer', id: id });
+    btn.disabled = false;
+    if (!r.ok) { aviso(r.mensaje, 'error'); return; }
+    await mostrarUsuarios($('contenido'));
+    mostrarClave(nombre, u.correo, u.celular, r.clave, false);
+    return;
+  }
+  if (accion === 'desbloquear') {
+    const r = await sb.rpc('admin_desbloquear', { p_id: id });
+    aviso(r.error ? textoError(r.error) : nombre + ' desbloqueado.', r.error ? 'error' : 'ok');
+    if (!r.error) mostrarUsuarios($('contenido'));
+    return;
+  }
+  if (accion === 'desactivar' || accion === 'reactivar') {
+    const activar = accion === 'reactivar';
+    if (!activar && !(await confirmar('Desactivar usuario', nombre + ' no podrá entrar al sistema. Su ficha y su historial se conservan, y se puede reactivar cuando quiera.', 'Desactivar', true))) return;
+    if (activar && u.rol === 'Sin acceso') { formUsuario(u); aviso('Escoja el perfil y guarde; después use Reactivar.', ''); return; }
+    btn.disabled = true;
+    const r = await llamarAdmin({ accion: 'estado', id: id, activo: activar });
+    btn.disabled = false;
+    aviso(r.mensaje, r.ok ? 'ok' : 'error');
+    if (r.ok) mostrarUsuarios($('contenido'));
+    return;
+  }
+  if (accion === 'borrar') {
+    if (!(await confirmar('Borrar usuario', 'Se borra la cuenta de ' + nombre + '. Lo que hizo en el sistema se conserva en la bitácora. Si solo quiere que no entre, mejor desactívelo.', 'Borrar', true))) return;
+    btn.disabled = true;
+    const r = await llamarAdmin({ accion: 'borrar', id: id });
+    btn.disabled = false;
+    aviso(r.mensaje, r.ok ? 'ok' : 'error');
+    if (r.ok) mostrarUsuarios($('contenido'));
+  }
 }
 
 // ================================================================== ARRANQUE

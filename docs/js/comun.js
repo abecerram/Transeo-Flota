@@ -150,17 +150,6 @@ function textoError(e) {
 function correoRecordado() { try { return localStorage.getItem(LLAVE_CORREO) || ''; } catch (e) { return ''; } }
 function recordarCorreo(c) { try { c ? localStorage.setItem(LLAVE_CORREO, c) : localStorage.removeItem(LLAVE_CORREO); } catch (e) {} }
 
-function intentosDe(correo) {
-  try { return JSON.parse(localStorage.getItem(LLAVE_INTENTOS) || '{}')[correo] || 0; } catch (e) { return 0; }
-}
-function ponerIntentos(correo, n) {
-  try {
-    const t = JSON.parse(localStorage.getItem(LLAVE_INTENTOS) || '{}');
-    if (n) t[correo] = n; else delete t[correo];
-    localStorage.setItem(LLAVE_INTENTOS, JSON.stringify(t));
-  } catch (e) {}
-}
-
 // ---------------------------------------------------------------- sesión
 
 function marcarActividad() { try { sessionStorage.setItem(LLAVE_ACTIVIDAD, String(Date.now())); } catch (e) {} }
@@ -189,6 +178,11 @@ async function exigirSesion() {
   if (p.error || !p.data || !p.data.activo || p.data.rol === 'Sin acceso') {
     await sb.auth.signOut();
     location.href = 'index.html?sinacceso=1';
+    return null;
+  }
+
+  if (p.data.clave_temporal && !/restablecer\.html/.test(location.pathname)) {
+    location.href = 'restablecer.html?temporal=1';
     return null;
   }
 
