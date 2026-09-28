@@ -70,8 +70,10 @@ const CATALOGOS = {
     form: [
       [{ c: 'nombre', t: 'Nombre completo *', req: true }, { c: 'cedula', t: 'Cédula', ph: '8-490-974' },
        { c: 'celular', t: 'Celular', ph: '6489-9870' }],
-      [{ c: 'licencia_tipo', t: 'Tipo de licencia' }, { c: 'licencia_vence', t: 'Licencia vence', tipo: 'date' },
-       { c: 'equipo_id', t: 'Equipo habitual', tipo: 'select', fuente: 'equipos' }],
+      { grupo: 'Licencia de conducir · con su propio aviso de vencimiento' },
+      [{ c: 'licencia_tipo', t: 'Tipo de licencia' }, { c: 'licencia_numero', t: 'Número de licencia', mono: true },
+       { c: 'licencia_vence', t: 'Licencia vence', tipo: 'date' }],
+      [{ c: 'equipo_id', t: 'Equipo habitual', tipo: 'select', fuente: 'equipos' }],
       [{ c: 'estado', t: 'Estado', tipo: 'select', ops: OPC.activo, def: 'Activo' }],
       [{ c: 'notas', t: 'Notas', tipo: 'textarea' }]
     ]
@@ -186,6 +188,12 @@ const CATALOGOS = {
 // =====================================================================
 
 const CAT_ESTADO = {};           // datos cargados por catálogo
+const RECARGA = {};              // pantallas propias que usan el formulario del catálogo (Equipos)
+
+function recargarCatalogo(clave) {
+  if (RECARGA[clave]) RECARGA[clave]();
+  else mostrarCatalogo(clave, $('contenido'));
+}
 const FUENTES = {};              // listas para los selectores: equipos, clientes...
 
 async function cargarFuente(nombre) {
@@ -328,11 +336,11 @@ function abrirFormulario(clave, fila) {
       '</div>';
   }
   form.innerHTML = h;
-  $('cat-lista').classList.add('oculto');
+  if ($('cat-lista')) $('cat-lista').classList.add('oculto');
   form.classList.remove('oculto');
   window.scrollTo(0, 0);
 
-  const cerrar = function () { form.classList.add('oculto'); $('cat-lista').classList.remove('oculto'); };
+  const cerrar = function () { form.classList.add('oculto'); if ($('cat-lista')) $('cat-lista').classList.remove('oculto'); };
   $('cat-volver').addEventListener('click', cerrar);
   if (!PERMISOS.capturar) return;
   $('cat-cancelar').addEventListener('click', cerrar);
@@ -380,7 +388,7 @@ async function guardarFormulario(clave, fila) {
     if (r.error) throw r.error;
     if (cat.despuesDeGuardar) await cat.despuesDeGuardar(r.data.id, d);
     aviso((fila ? 'Cambios guardados' : 'Registrado') + ': ' + (d.nombre || d.nombre_corto || ''), 'ok');
-    mostrarCatalogo(clave, $('contenido'));
+    recargarCatalogo(clave);
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Guardar';
     pintarMensaje('cat-msj', esc(textoError(e)), 'error');
@@ -396,5 +404,5 @@ async function borrarRegistro(clave, fila) {
   const r = await sb.from(cat.tabla).delete().eq('id', fila.id);
   if (r.error) { pintarMensaje('cat-msj', esc(textoError(r.error)), 'error'); return; }
   aviso('Eliminado.', 'ok');
-  mostrarCatalogo(clave, $('contenido'));
+  recargarCatalogo(clave);
 }
