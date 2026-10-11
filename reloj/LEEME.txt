@@ -1,0 +1,58 @@
+GRUPO THELMAR · RELOJ DE MARCACIÓN
+==================================
+
+Qué hace
+--------
+Marca la entrada al encender la computadora y la salida al apagarla.
+Si la computadora entra en reposo y despierta, lo marca como receso.
+Si no hay internet, guarda la marca y la envía cuando vuelve, con la
+hora real en que ocurrió (esa marca le sale señalada a Planilla).
+El trabajador no aprieta nada y no ve nada.
+
+Antes de instalar (en el portal, como administrador)
+----------------------------------------------------
+1. Configuración > Computadoras y claves > Agregar computadora
+   (ej. THM-PC-01).
+2. "Nueva clave": anote la clave, se muestra una sola vez.
+3. Planilla asigna esa computadora al trabajador en su ficha
+   (Asistencia y planilla > Trabajadores). Sin trabajador asignado,
+   el portal rechaza las marcas.
+
+Instalar en cada computadora
+----------------------------
+1. Copie la carpeta "reloj" a la computadora (memoria USB o descarga).
+2. Clic derecho en instalar.ps1 > "Ejecutar con PowerShell".
+   Acepte el aviso de permisos de administrador.
+3. Escriba el código de la computadora y su clave.
+4. El instalador prueba la conexión: si sale "Conexión correcta",
+   quedó marcada la entrada de hoy y el reloj ya está trabajando.
+
+El instalador:
+- guarda la clave en C:\ProgramData\RelojTHM, donde solo Windows y
+  los administradores pueden leerla;
+- crea cinco tareas programadas en la carpeta "RelojTHM" del
+  Programador de tareas: Encendido, Apagado, Reposo, Despertar y
+  Enviar (esta última manda lo pendiente cada 5 minutos);
+- desactiva el "inicio rápido" de Windows, que si no apaga a medias
+  y la entrada no se marcaría al encender.
+
+Si Windows no deja ejecutar el archivo
+--------------------------------------
+Abra PowerShell como administrador, vaya a la carpeta del reloj y
+escriba:
+    powershell -ExecutionPolicy Bypass -File .\instalar.ps1
+
+Cambiar la clave
+----------------
+Genere una nueva en el portal y vuelva a correr instalar.ps1.
+La anterior deja de servir en cuanto se genera la nueva.
+
+Revisar qué ha marcado
+----------------------
+C:\ProgramData\RelojTHM\reloj.log (abrir como administrador).
+Las marcas que no se pudieron enviar están en cola.jsonl.
+
+Quitar el reloj
+---------------
+Clic derecho en desinstalar.ps1 > "Ejecutar con PowerShell".
+Antes de quitarlo, intenta enviar lo pendiente.
