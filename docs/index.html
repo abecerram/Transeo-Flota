@@ -60,7 +60,6 @@
 <script src="js/config.js"></script>
 <script src="js/comun.js"></script>
 <script>
-const INTENTOS_MAX = 3;
 const CANDADO = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 let CORREO_BLOQUEO = '';
 let RELOJ = null;
@@ -97,19 +96,19 @@ async function entrar() {
   const clave = $('clave').value;
   $('clave').classList.remove('mal');
   if (!correo || !clave) { pintarMensaje('msj-entrar', 'Escriba su correo y su clave.', 'error'); return; }
-  if (intentosDe(correo) >= INTENTOS_MAX) { await pedirCodigo(correo); return; }
 
   const carga = pantallaCarga();
-  const r = await sb.auth.signInWithPassword({ email: correo, password: clave });
+  const b = await sb.rpc('correo_bloqueado', { p_correo: correo });
+  if (b.data === true) { carga.remove(); await pedirCodigo(correo); return; }
 
+  const r = await sb.auth.signInWithPassword({ email: correo, password: clave });
   if (r.error) {
     carga.remove();
     if (/Invalid login credentials/i.test(r.error.message)) {
-      const n = intentosDe(correo) + 1;
-      ponerIntentos(correo, n);
+      const q = await sb.rpc('registrar_intento_fallido', { p_correo: correo });
+      const quedan = typeof q.data === 'number' ? q.data : 2;
       $('clave').classList.add('mal');
-      if (n >= INTENTOS_MAX) { await pedirCodigo(correo); return; }
-      const quedan = INTENTOS_MAX - n;
+      if (quedan <= 0) { await pedirCodigo(correo); return; }
       pintarMensaje('msj-entrar', 'Correo o clave incorrectos. <b>Le queda' + (quedan === 1 ? '' : 'n') + ' ' + quedan +
         ' intento' + (quedan === 1 ? '' : 's') + '</b> antes de que la cuenta se bloquee.', 'error');
     } else {
@@ -117,7 +116,7 @@ async function entrar() {
     }
     return;
   }
-  ponerIntentos(correo, 0);
+  await sb.rpc('limpiar_intentos');
   recordarCorreo($('recordar').checked ? correo : '');
   marcarActividad();
   location.href = 'app.html';
@@ -154,7 +153,7 @@ async function validarCodigo() {
   const carga = pantallaCarga();
   const r = await sb.auth.verifyOtp({ email: CORREO_BLOQUEO, token: token, type: 'email' });
   if (r.error) { carga.remove(); pintarMensaje('msj-codigo', esc(textoError(r.error)), 'error'); return; }
-  ponerIntentos(CORREO_BLOQUEO, 0);
+  await sb.rpc('limpiar_intentos');
   marcarActividad();
   location.href = 'app.html';
 }

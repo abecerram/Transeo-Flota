@@ -32,6 +32,7 @@
 <script src="js/comun.js"></script>
 <script>
 let CORREO = '';
+const ES_TEMPORAL = /temporal=1/.test(location.search);
 
 function verClave(id, btn) {
   const i = $(id);
@@ -54,9 +55,11 @@ function reglas() {
 function listo(esNueva, sesion) {
   CORREO = (sesion && sesion.user && sesion.user.email) || '';
   const nombre = (sesion && sesion.user && sesion.user.user_metadata && sesion.user.user_metadata.nombre) || '';
-  $('titulo').textContent = esNueva ? 'Bienvenido' + (nombre ? ', ' + nombre.split(' ')[0] : '') : 'Poner una clave nueva';
-  $('sub').textContent = esNueva
-    ? 'Lo invitaron al sistema de flota de Transeo. Escoja su clave: solo usted la conoce, ni el administrador la ve.'
+  $('titulo').textContent = ES_TEMPORAL ? 'Cambie su clave temporal'
+    : esNueva ? 'Bienvenido' + (nombre ? ', ' + nombre.split(' ')[0] : '') : 'Poner una clave nueva';
+  $('sub').textContent = ES_TEMPORAL
+    ? 'Entró con la clave temporal que le dio el administrador. Escoja la suya para seguir: solo usted la conoce, ni el administrador la ve.'
+    : esNueva ? 'Lo invitaron al sistema de flota de Transeo. Escoja su clave: solo usted la conoce, ni el administrador la ve.'
     : 'Escriba su clave nueva. La anterior deja de servir.';
   $('formulario').classList.remove('oculto');
   reglas();
@@ -72,7 +75,8 @@ async function guardar() {
   const r = await sb.auth.updateUser({ password: a });
   btn.disabled = false; btn.textContent = 'Guardar clave y entrar';
   if (r.error) { pintarMensaje('msj', esc(textoError(r.error)), 'error'); return; }
-  if (CORREO) ponerIntentos(CORREO, 0);
+  await sb.rpc('marcar_clave_cambiada');
+  await sb.rpc('limpiar_intentos');
   marcarActividad();
   location.href = 'app.html';
 }
