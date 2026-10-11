@@ -197,3 +197,65 @@ async function exigirSesion() {
   setInterval(function () { if (sesionVencida()) salir('inactivo'); }, 30000);
   return p.data;
 }
+
+// ---------------------------------------------------------------- imágenes
+
+/** Achica una foto en el navegador antes de subirla. Devuelve { blob, base64 }. */
+function reducirImagen(archivo, ladoMax, calidad) {
+  ladoMax = ladoMax || 1600; calidad = calidad || 0.82;
+  return new Promise(function (resolver, rechazar) {
+    const lector = new FileReader();
+    lector.onerror = function () { rechazar(new Error('No se pudo leer la imagen.')); };
+    lector.onload = function () {
+      const img = new Image();
+      img.onerror = function () { rechazar(new Error('El archivo no es una imagen válida.')); };
+      img.onload = function () {
+        const k = Math.min(1, ladoMax / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(img, 0, 0, c.width, c.height);
+        const base64 = c.toDataURL('image/jpeg', calidad);
+        c.toBlob(function (b) { resolver({ blob: b, base64: base64 }); }, 'image/jpeg', calidad);
+      };
+      img.src = lector.result;
+    };
+    lector.readAsDataURL(archivo);
+  });
+}
+
+/** Sube una imagen a un espacio privado de Storage. Devuelve la ruta guardada. */
+async function subirImagen(espacio, ruta, blob) {
+  const r = await sb.storage.from(espacio).upload(ruta, blob, { contentType: 'image/jpeg', upsert: false });
+  if (r.error) throw r.error;
+  return ruta;
+}
+
+/** Enlaces temporales para ver varias imágenes privadas. Devuelve { ruta: url }. */
+const CACHE_URL = {};
+async function urlsFirmadas(espacio, rutas) {
+  const faltan = rutas.filter(function (r) { return r && !CACHE_URL[espacio + '/' + r]; });
+  if (faltan.length) {
+    const r = await sb.storage.from(espacio).createSignedUrls(faltan, 3600);
+    (r.data || []).forEach(function (x) { if (x.signedUrl) CACHE_URL[espacio + '/' + x.path] = x.signedUrl; });
+  }
+  const salida = {};
+  rutas.forEach(function (r) { if (r) salida[r] = CACHE_URL[espacio + '/' + r] || ''; });
+  return salida;
+}
+
+/** Abre una imagen grande encima de la pantalla. */
+function verImagen(url, titulo) {
+  const f = document.createElement('div');
+  f.className = 'fondo-ventana';
+  f.innerHTML = '<div class="visor"><div class="visor-c"><b>' + esc(titulo || '') + '</b><div class="acciones" style="margin:0">' +
+    '<a class="btn claro chico" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="' + esc(url) + '">Abrir aparte</a>' +
+    '<button class="btn chico" data-c="1">Cerrar</button></div></div><img src="' + esc(url) + '" alt=""></div>';
+  f.addEventListener('click', function (e) { if (e.target === f || e.target.getAttribute('data-c')) f.remove(); });
+  document.body.appendChild(f);
+}
+
+function slug(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}

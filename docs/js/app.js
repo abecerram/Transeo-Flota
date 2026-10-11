@@ -31,7 +31,7 @@ const SECCIONES = [
   { clave: 'inicio',        grupo: 'GENERAL',        titulo: 'Inicio', sub: 'La flota de un vistazo', roles: TODOS, abrir: mostrarInicio },
   { clave: 'equipos',       grupo: 'FLOTA',          titulo: 'Equipos', sub: 'Registro de la flota y hoja de vida de cada unidad', roles: TODOS, abrir: mostrarEquipos },
   { clave: 'conductores',   grupo: 'FLOTA',          catalogo: true, roles: TODOS },
-  { clave: 'documentos',    grupo: 'FLOTA',          titulo: 'Documentos', pronto: true, roles: TODOS },
+  { clave: 'documentos',    grupo: 'FLOTA',          titulo: 'Documentos', sub: 'Una imagen por documento · de aquí salen los avisos y la hoja de vida', roles: TODOS, abrir: mostrarDocumentos },
   { clave: 'inspeccion',    grupo: 'FLOTA',          titulo: 'Inspección y mantenimiento', pronto: true, roles: TODOS },
   { clave: 'gastos',        grupo: 'DINERO',         titulo: 'Gastos', pronto: true, roles: TODOS },
   { clave: 'solicitudes',   grupo: 'DINERO',         titulo: 'Solicitudes de pago', pronto: true, roles: TODOS },
@@ -99,21 +99,21 @@ async function mostrarInicio(cont) {
   const aten = [];
   vencidos.slice(0, 4).forEach(x => aten.push(['rojo', x.equipo + ' · ' + x.tipo.toLowerCase() + ' vencido', 'Venció el ' + fechaTexto(x.vence) + ' · hace ' + Math.abs(x.dias) + ' días', 'equipos']));
   porVencer.slice(0, 3).forEach(x => aten.push(['ambar', x.equipo + ' · ' + x.tipo.toLowerCase() + ' vence pronto', 'Vence el ' + fechaTexto(x.vence) + ' · faltan ' + x.dias + ' días', 'equipos']));
+  const pl = n => n === 1 ? '' : 's';
   equipos.filter(e => e.estado === 'En taller').forEach(e => aten.push(['ambar', e.nombre + ' en taller', 'Placa ' + e.placa, 'equipos']));
   const conConductor = new Set((cond.data || []).map(c => c.equipo_id));
   const sinConductor = equipos.filter(e => e.estado === 'Activo' && !conConductor.has(e.id));
-  const pl = n => n === 1 ? '' : 's';
   if (sinConductor.length) aten.push(['', sinConductor.length + ' equipo' + pl(sinConductor.length) + ' sin conductor asignado', sinConductor.slice(0, 3).map(e => e.nombre).join(', ') + (sinConductor.length > 3 ? '…' : ''), 'conductores']);
   const sinKm = equipos.filter(e => !e.km_actual);
   if (sinKm.length) aten.push(['', sinKm.length + ' equipo' + pl(sinKm.length) + ' sin kilometraje', 'Anótelo en la ficha de cada uno para que avise el mantenimiento', 'equipos']);
-  if (!v.length) aten.push(['', 'Todavía no hay documentos cargados', 'Llegan con el paquete de documentos por imagen', 'inicio']);
+  if (!v.length) aten.push(['ambar', 'Todavía no hay documentos cargados', 'Suba la imagen de cada documento para que empiecen los avisos', 'documentos']);
 
   const modulos = [
     ['equipos', 'Equipos', 'Registro de la flota y hoja de vida', vencidos.length ? 'Atención' : 'Al día', vencidos.length ? 'ambar' : 'verde'],
     ['conductores', 'Conductores', 'Quién maneja cada equipo', sinConductor.length ? sinConductor.length + ' equipo' + (sinConductor.length === 1 ? '' : 's') + ' sin conductor' : 'Al día', sinConductor.length ? 'ambar' : 'verde'],
     ['beneficiarios', 'Proveedores y beneficiarios', 'Todo a quien se le paga', (ben.count || 0) + ' registrados', 'verde'],
     ['proyectos', 'Proyectos', 'Nombre oficial, cliente y frentes', 'Catálogo', 'verde'],
-    ['documentos', 'Documentos', 'Vencimientos, imágenes y renovaciones', 'Próximo paquete', ''],
+    ['documentos', 'Documentos', 'Vencimientos, imágenes y renovaciones', vencidos.length ? vencidos.length + ' vencido' + pl(vencidos.length) : v.length ? 'Al día' : 'Por cargar', vencidos.length ? 'rojo' : v.length ? 'verde' : 'ambar'],
     ['inspeccion', 'Inspección y mantenimiento', 'Revisión mensual y fallas', 'Próximo paquete', ''],
     ['gastos', 'Gastos', 'Capturas por registrar e historial', 'Próximo paquete', ''],
     ['solicitudes', 'Solicitudes de pago', 'Aprobación y pago', 'Próximo paquete', '']
@@ -144,7 +144,7 @@ async function mostrarInicio(cont) {
 }
 
 // ================================================================== EQUIPOS · lista y línea de tiempo
-const EQ = { lista: [], docs: [], cond: [], plan: [], sel: null, pestana: 'Línea de tiempo' };
+const EQ = { lista: [], docs: [], cond: [], plan: [], fotos: {}, sel: null, pestana: 'Línea de tiempo' };
 
 async function mostrarEquipos(cont) {
   cargando(cont, 'Cargando la flota...');
@@ -156,6 +156,7 @@ async function mostrarEquipos(cont) {
   ]);
   if (eq.error) { cont.innerHTML = '<div class="mensaje error">' + esc(textoError(eq.error)) + '</div>'; return; }
   EQ.lista = eq.data; EQ.docs = docs.data || []; EQ.cond = cond.data || []; EQ.plan = plan.data || [];
+  try { EQ.fotos = await urlsFirmadas('fotos', EQ.lista.map(e => e.foto_ref).filter(Boolean)); } catch (e) { EQ.fotos = {}; }
   CAT_ESTADO.equipos = EQ.lista;
   if (!EQ.sel || !EQ.lista.some(e => e.id === EQ.sel)) EQ.sel = EQ.lista.length ? EQ.lista[0].id : null;
 
@@ -178,7 +179,9 @@ function pintarListaEq() {
   if (!filas.length) { $('eq-lista').innerHTML = '<div class="vacio">' + (EQ.lista.length ? 'Nada coincide.' : 'Todavía no hay equipos.') + '</div>'; return; }
   $('eq-lista').innerHTML = filas.map(function (e) {
     const s = situacionDocs(EQ.docs.filter(d => d.equipo_id === e.id));
-    return '<div class="li' + (e.id === EQ.sel ? ' sel' : '') + '" data-eq="' + e.id + '"><div><b>' + esc(e.nombre) + '</b><div class="mono">' + esc(e.placa) + '</div></div>' +
+    const f = e.foto_ref && EQ.fotos[e.foto_ref];
+    return '<div class="li' + (e.id === EQ.sel ? ' sel' : '') + '" data-eq="' + e.id + '"><div class="li-i"><span class="mini-eq">' +
+      (f ? '<img src="' + esc(f) + '" alt="">' : marca('escudo', 22)) + '</span><div><b>' + esc(e.nombre) + '</b><div class="mono">' + esc(e.placa) + '</div></div></div>' +
       '<span class="pt ' + s.c + '" title="Documentos: ' + esc(s.t) + '"></span></div>';
   }).join('');
   $('eq-lista').querySelectorAll('[data-eq]').forEach(li => li.addEventListener('click', function () {
@@ -199,7 +202,7 @@ async function pintarFichaEq() {
   const pestanas = ['Línea de tiempo', 'Datos', 'Mantenimiento', 'Documentos'];
 
   f.innerHTML =
-    '<div class="ficha-cab"><div class="icono">' + marca('escudo', 30) + '</div><div class="t"><div class="tit2">' + esc(e.nombre) +
+    '<div class="ficha-cab">' + fotoFicha(e) + '<div class="t"><div class="tit2">' + esc(e.nombre) +
       ' <span class="mono gris" style="font-size:14px">· ' + esc(e.placa) + '</span></div><div class="gris">' +
       esc([e.marca, e.modelo, e.anio].filter(Boolean).join(' · ') || e.tipo) + ' · ' + esc(cond ? cond.nombre : 'sin conductor asignado') + '</div></div>' +
       '<span class="etiqueta ' + (e.estado === 'Activo' ? 'bien' : 'urgente') + '">' + esc(e.estado.toUpperCase()) + '</span>' +
@@ -214,6 +217,7 @@ async function pintarFichaEq() {
     '<div id="eq-pestana"></div>';
 
   f.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', function () { EQ.pestana = b.dataset.p; pintarFichaEq(); }));
+  conectarFoto(e);
   if ($('eq-editar')) $('eq-editar').addEventListener('click', function () { abrirFormulario('equipos', e); });
   const c = $('eq-pestana');
 
@@ -268,7 +272,8 @@ async function pintarFichaEq() {
       docs.map(d => '<tr><td><b>' + esc(d.tipo) + '</b></td><td class="mono">' + esc(d.numero || '—') + '</td><td>' + (d.vence ? fechaTexto(d.vence) : 'no vence') + '</td>' +
         '<td><span class="etiqueta ' + (d.situacion === 'Vencido' ? 'vencido' : d.situacion === 'Por vencer' ? 'urgente' : 'bien') + '">' + esc(d.situacion.toUpperCase()) + '</span></td></tr>').join('') +
       '</table></div>' : '<div class="vacio">Todavía no hay documentos cargados para este equipo.</div>') +
-      '<div class="mensaje" style="margin-top:14px">La carga de documentos por imagen, con su lectura automática y los avisos por correo, llega en el próximo paquete.</div>';
+      '<div class="acciones"><button class="btn suave chico" id="eq-ir-docs">Ir a Documentos</button></div>';
+    $('eq-ir-docs').addEventListener('click', function () { DOC.sel = e.id; abrirSeccion('documentos'); });
     return;
   }
 
@@ -283,6 +288,50 @@ async function pintarFichaEq() {
   }
   c.innerHTML = '<div class="linea">' + r.data.map(x => '<div class="lt"><span class="lt-p ' + esc(x.tipo) + '"></span><span class="mono gris">' + fechaTexto(x.fecha) +
     '</span><span><b style="color:var(--azul)">' + esc(x.tipo) + '</b> · ' + esc(x.texto) + '</span></div>').join('') + '</div>';
+}
+
+// ------------------------------------------------------------------ foto del equipo
+function fotoFicha(e) {
+  const url = e.foto_ref && EQ.fotos[e.foto_ref];
+  const dentro = url ? '<img src="' + esc(url) + '" alt="Foto de ' + esc(e.nombre) + '">'
+    : '<span class="sin">' + marca('escudo', 30) + (PERMISOS.capturar ? 'AGREGAR FOTO' : 'SIN FOTO') + '</span>';
+  return '<div style="display:flex;flex-direction:column;gap:4px;align-items:center">' +
+    '<button type="button" class="foto-eq' + (PERMISOS.capturar ? ' cambiar' : '') + '" id="eq-foto" title="' + (url ? 'Ver o cambiar la foto' : 'Agregar foto') + '">' + dentro + '</button>' +
+    (PERMISOS.capturar ? '<input type="file" id="eq-foto-archivo" accept="image/*" class="oculto">' : '') +
+    (url && PERMISOS.capturar ? '<button type="button" class="enlace" id="eq-foto-quitar" style="font-size:11.5px">Quitar foto</button>' : '') + '</div>';
+}
+
+function conectarFoto(e) {
+  const btn = $('eq-foto'), inp = $('eq-foto-archivo');
+  const url = e.foto_ref && EQ.fotos[e.foto_ref];
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    if (url && !PERMISOS.capturar) { verImagen(url, e.nombre + ' · ' + e.placa); return; }
+    if (inp) inp.click();
+  });
+  if (inp) inp.addEventListener('change', async function () {
+    const archivo = inp.files && inp.files[0];
+    if (!archivo) return;
+    btn.innerHTML = '<div class="giro"></div>';
+    try {
+      const img = await reducirImagen(archivo, 1280, 0.8);
+      const ruta = 'equipos/' + e.id + '/' + Date.now() + '.jpg';
+      await subirImagen('fotos', ruta, img.blob);
+      const r = await sb.from('equipos').update({ foto_ref: ruta }).eq('id', e.id);
+      if (r.error) throw r.error;
+      e.foto_ref = ruta;
+      Object.assign(EQ.fotos, await urlsFirmadas('fotos', [ruta]));
+      aviso('Foto guardada.', 'ok');
+    } catch (x) { aviso(textoError(x), 'error'); }
+    pintarListaEq(); pintarFichaEq();
+  });
+  const quitar = $('eq-foto-quitar');
+  if (quitar) quitar.addEventListener('click', async function () {
+    if (!(await confirmar('Quitar la foto', 'La ficha de ' + e.nombre + ' queda sin foto. La imagen se conserva de respaldo.', 'Quitar'))) return;
+    const r = await sb.from('equipos').update({ foto_ref: null }).eq('id', e.id);
+    if (r.error) { aviso(textoError(r.error), 'error'); return; }
+    e.foto_ref = null; pintarListaEq(); pintarFichaEq();
+  });
 }
 
 // ================================================================== USUARIOS
