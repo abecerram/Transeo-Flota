@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thelmar Panamá · Portal</title>
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="css/thelmar.css">
+</head>
+<body>
+<div class="arranque" id="arranque"><img src="logo.png" alt="Cargando el portal"></div>
+
+<div class="oculto" id="portal">
+  <div class="tbar">
+    <div class="brand"><img src="logo.png" alt="THM Ingeniería Integral"><div class="co"><b>Thelmar Panamá</b><small>Grupo Thelmar</small></div></div>
+    <div class="act">
+      <div id="aviso-entrada"></div>
+      <button class="switch oculto" type="button" id="btn-empresa" aria-expanded="false">Cambiar empresa ▾</button>
+      <span class="av" id="iniciales" title=""></span>
+      <button class="out" type="button" id="btn-salir">Salir</button>
+    </div>
+    <div class="menu-emp oculto" id="menu-empresas" role="menu"></div>
+  </div>
+  <div class="shell">
+    <nav class="sidebar" id="menu" aria-label="Menú de Thelmar Panamá"></nav>
+    <main class="content" id="contenido"></main>
+  </div>
+</div>
+<div id="capa"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../js/config.js"></script>
+<script src="../js/comun.js"></script>
+<script src="js/grupo.js"></script>
+<script src="js/portal.js"></script>
+<script src="js/agenda.js"></script>
+<script src="js/personal.js"></script>
+<script src="js/admin.js"></script>
+<script>arrancar();</script>
+</body>
+</html>

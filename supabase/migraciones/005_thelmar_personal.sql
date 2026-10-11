@@ -150,7 +150,7 @@ create table if not exists public.personal_trabajadores (
   isr            boolean not null default true,
   otro_desc      numeric(12,2) not null default 0 check (otro_desc >= 0),
   otro_concepto  text,
-  usuario_id     uuid references auth.users (id) on delete set null,
+  correo         text,
   estado         text not null default 'Activo' check (estado in ('Activo','Inactivo')),
   creado_por     uuid default auth.uid(),
   creado_en      timestamptz not null default now(),
@@ -174,6 +174,8 @@ create table if not exists public.personal_computadoras (
   ultima_senal   timestamptz,
   creado_en      timestamptz not null default now()
 );
+
+alter table public.personal_trabajadores add column if not exists correo text;
 
 create unique index if not exists personal_computadora_por_trabajador
   on public.personal_computadoras (trabajador_id) where trabajador_id is not null;
@@ -272,8 +274,11 @@ create table if not exists public.personal_bitacora (
   accion       text not null,
   motivo       text,
   por          uuid default auth.uid(),
+  por_nombre   text,
   cuando       timestamptz not null default now()
 );
+
+alter table public.personal_bitacora add column if not exists por_nombre text;
 
 create or replace function public.personal_dia_abierto(p_empresa text, p_fecha date)
 returns boolean language sql stable security definer set search_path = public as $$
@@ -291,6 +296,7 @@ create table if not exists public.personal_correcciones (
   despues        time   not null,
   motivo         text   not null check (length(trim(motivo)) >= 5),
   por            uuid   not null default auth.uid(),
+  por_nombre     text,
   creado_en      timestamptz not null default now()
 );
 
@@ -343,11 +349,16 @@ create trigger dia_abierto before insert or update or delete on public.personal_
 
 -- la corrección anota sola quién la hizo, aunque alguien mande otro nombre
 create or replace function public.personal_firmar()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 begin
   new.por := auth.uid();
+  if tg_table_name in ('personal_correcciones', 'personal_bitacora') then
+    new.por_nombre := (select coalesce(nombre, correo) from public.perfiles where id = auth.uid());
+  end if;
   return new;
 end $$;
+
+alter table public.personal_correcciones add column if not exists por_nombre text;
 
 drop trigger if exists firmar on public.personal_correcciones;
 create trigger firmar before insert on public.personal_correcciones for each row execute function public.personal_firmar();
@@ -355,6 +366,8 @@ drop trigger if exists firmar on public.personal_ausencias;
 create trigger firmar before insert or update on public.personal_ausencias for each row execute function public.personal_firmar();
 drop trigger if exists firmar on public.personal_aceptadas;
 create trigger firmar before insert on public.personal_aceptadas for each row execute function public.personal_firmar();
+drop trigger if exists firmar on public.personal_bitacora;
+create trigger firmar before insert on public.personal_bitacora for each row execute function public.personal_firmar();
 
 -- cerrar y reabrir pasan por aquí, para que quede la bitácora
 create or replace function public.personal_cerrar_quincena(p_empresa text, p_inicio date, p_fin date)
@@ -477,7 +490,8 @@ returns time language sql stable security definer set search_path = public as $$
   from public.personal_marcas m
   join public.personal_trabajadores t on t.id = m.trabajador_id
   join public.personal_parametros p on p.empresa_id = t.empresa_id
-  where t.usuario_id = auth.uid() and t.empresa_id = p_empresa and p.aviso_trabajador
+  where lower(t.correo) = (select lower(email) from auth.users where id = auth.uid())
+    and t.empresa_id = p_empresa and p.aviso_trabajador
     and m.tipo = 'encendido'
     and (m.hora_efectiva at time zone 'America/Panama')::date = (now() at time zone 'America/Panama')::date
 $$;
@@ -507,6 +521,44 @@ create index if not exists grupo_agenda_por_usuario on public.grupo_agenda (usua
 
 
 -- ---------------------------------------------------------------------
+--  7b. USUARIOS DEL GRUPO
+--  El administrador de cada empresa ve y maneja a su gente. Las cuentas
+--  las crea la función admin-usuarios con clave temporal, como en Transeo.
+-- ---------------------------------------------------------------------
+
+-- la empresa que cada quien escogió la primera vez
+create table if not exists public.grupo_preferencias (
+  usuario_id         uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  empresa_principal  text not null references public.grupo_empresas (id),
+  actualizado_en     timestamptz not null default now()
+);
+
+create or replace function public.grupo_usuarios(p_empresa text)
+returns table (id uuid, correo text, nombre text, rol text, activo boolean, acceso_activo boolean,
+               cedula text, celular text, clave_temporal boolean, bloqueado boolean, ultimo_acceso timestamptz)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.correo, p.nombre, a.rol, p.activo, a.activo, p.cedula, p.celular, p.clave_temporal,
+         coalesce(ia.bloqueado, false), u.last_sign_in_at
+  from public.grupo_accesos a
+  join public.perfiles p on p.id = a.usuario_id
+  join auth.users u on u.id = p.id
+  left join public.intentos_acceso ia on ia.correo = lower(p.correo)
+  where a.empresa_id = p_empresa and public.grupo_tiene_rol(p_empresa, array['Administrador'])
+  order by p.nombre
+$$;
+
+create or replace function public.grupo_desbloquear(p_empresa text, p_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.grupo_tiene_rol(p_empresa, array['Administrador'])
+     or not exists (select 1 from public.grupo_accesos where empresa_id = p_empresa and usuario_id = p_id) then
+    raise exception 'Su perfil no tiene permiso para hacer esto' using errcode = 'P0001';
+  end if;
+  delete from public.intentos_acceso where correo = (select lower(correo) from public.perfiles where id = p_id);
+end $$;
+
+
+-- ---------------------------------------------------------------------
 --  8. PERMISOS
 --  Gerencia solo consulta. Leidy (Planilla) registra, corrige y cierra.
 --  El administrador además maneja jornadas, feriados y computadoras.
@@ -527,13 +579,14 @@ alter table public.personal_correcciones  enable row level security;
 alter table public.personal_aceptadas     enable row level security;
 alter table public.personal_ausencias     enable row level security;
 alter table public.grupo_agenda                 enable row level security;
+alter table public.grupo_preferencias     enable row level security;
 
 do $$
 declare t text; p text;
 begin
   foreach t in array array['grupo_empresas','grupo_accesos','personal_parametros','personal_jornadas','personal_feriados',
     'personal_trabajadores','personal_computadoras','personal_marcas','personal_quincenas','personal_bitacora',
-    'personal_correcciones','personal_aceptadas','personal_ausencias','grupo_agenda']
+    'personal_correcciones','personal_aceptadas','personal_ausencias','grupo_agenda','grupo_preferencias']
   loop
     for p in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
       execute format('drop policy %I on public.%I', p, t);
@@ -604,6 +657,11 @@ create policy crear on public.grupo_agenda for insert with check (usuario_id = a
 create policy editar on public.grupo_agenda for update using (usuario_id = auth.uid()) with check (usuario_id = auth.uid());
 create policy borrar on public.grupo_agenda for delete using (usuario_id = auth.uid());
 
+-- preferencia: solo la propia
+create policy ver on public.grupo_preferencias for select using (usuario_id = auth.uid());
+create policy crear on public.grupo_preferencias for insert with check (usuario_id = auth.uid());
+create policy editar on public.grupo_preferencias for update using (usuario_id = auth.uid()) with check (usuario_id = auth.uid());
+
 -- funciones: el reloj entra sin sesión solo a la suya
 revoke execute on function public.personal_recibir_marca(text, text, text, timestamptz, boolean) from public;
 grant  execute on function public.personal_recibir_marca(text, text, text, timestamptz, boolean) to anon, authenticated;
@@ -614,6 +672,10 @@ grant  execute on function public.personal_cerrar_quincena(text, date, date) to 
 revoke execute on function public.personal_reabrir_quincena(bigint, text) from public, anon;
 grant  execute on function public.personal_reabrir_quincena(bigint, text) to authenticated;
 revoke all on public.personal_dias from anon;
+revoke execute on function public.grupo_usuarios(text) from public, anon;
+grant  execute on function public.grupo_usuarios(text) to authenticated;
+revoke execute on function public.grupo_desbloquear(text, uuid) from public, anon;
+grant  execute on function public.grupo_desbloquear(text, uuid) to authenticated;
 revoke execute on function public.personal_mi_entrada_hoy(text) from public, anon;
 grant  execute on function public.personal_mi_entrada_hoy(text) to authenticated;
 
