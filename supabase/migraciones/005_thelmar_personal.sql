@@ -688,3 +688,15 @@ grant  execute on function public.personal_mi_entrada_hoy(text) to authenticated
 insert into public.grupo_accesos (usuario_id, empresa_id, rol, principal)
 select id, 'thelmar', 'Administrador', true from auth.users where lower(email) = 'abecerra@orbidat.com'
 on conflict (usuario_id, empresa_id) do nothing;
+
+-- ---------------------------------------------------------------- ajustes del revisor de seguridad (aplicados el 11-oct-2026)
+alter function public.personal_lleva_planilla(text) set search_path = public;
+alter function public.personal_ve(text) set search_path = public;
+alter function public.personal_exigir_dia_abierto() set search_path = public;
+revoke execute on function public.personal_firmar() from public, anon, authenticated;
+revoke execute on function public.personal_dia_abierto(text, date) from public, anon;
+grant  execute on function public.personal_dia_abierto(text, date) to authenticated;
+revoke execute on function public.grupo_rol_en(text) from public, anon;
+grant  execute on function public.grupo_rol_en(text) to authenticated;
+revoke execute on function public.grupo_tiene_rol(text, text[]) from public, anon;
+grant  execute on function public.grupo_tiene_rol(text, text[]) to authenticated;
